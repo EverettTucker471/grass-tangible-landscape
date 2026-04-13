@@ -8,3 +8,23 @@ include $(MODULE_TOPDIR)/include/Make/Script.make
 include $(MODULE_TOPDIR)/include/Make/Python.make
 
 default: script
+
+# Omitting Html compilation
+html:
+	@true
+
+%.tmp.html:
+	@true
+
+%tmp.md:
+	@true
+
+$(HTMLDIR)/$(PGM).html:
+	@true
+
+$(MDDIR)/source/$(PGM).md:
+	@true
+
+$(MANDIR)/$(PGM).$(MANSECT):
+	@true
+
