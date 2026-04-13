@@ -1110,3 +1110,145 @@ def classify_colors(
     gcore.run_command(
         "r.mode", base=segments, cover=filtered_classification, output=new, env=env
     )
+
+
+def classify_colors_his(
+    new, group, compactness=2, threshold=0.3, minsize=10, env=None
+):
+    hue = "tmp_hue"
+    intensity = "tmp_intensity"
+    saturation = "tmp_saturation"
+    hs_group = "hs_group"
+
+    segment = "tmp_segment"
+
+    # we expect this name of signature
+    signature = "signature_his"
+    classification = "tmp_classification"
+    filtered_classification = "tmp_filtered_classification"
+    reject = "tmp_reject"
+
+    # Converting to HIS colorspace
+    gcore.run_command(
+        "i.rgb.his",
+        red=f'{group}_r',
+        green=f'{group}_g',
+        blue=f'{group}_b',
+        hue=hue,
+        intensity=intensity,
+        saturation=saturation,
+        env=env,
+    )
+
+    # Creating HS group without intensity
+    gcore.run_command(
+        "i.group",
+        group=hs_group,
+        subgroup=hs_group,
+        input=[hue, saturation],
+        env=env,
+    )
+
+    # Running the segmentation using superpixels
+    gcore.run_command(
+        "i.superpixels.slic",
+        input=group,
+        output=segment,
+        compactness=compactness,
+        minsize=minsize,
+        env=env,
+    )
+
+    gcore.run_command(
+        "i.smap",
+        group=hs_group,
+        subgroup=hs_group,
+        signaturefile=signature,
+        output=classification,
+        goodness=reject,
+        env=env,
+    )
+    cutoff = 99
+    percentile = float(
+        gcore.parse_command("r.univar", flags="ge", percentile=cutoff, map=reject, env=env)[f"percentile_{cutoff}"]
+    )
+    grast.mapcalc(
+        "{new} = if({reject} < {thres}, {classif}, null())".format(
+            new=filtered_classification,
+            reject=reject,
+            classif=classification,
+            thres=percentile,
+        ),
+        env=env,
+    )
+    gcore.run_command(
+        "r.mode", base=segment, cover=filtered_classification, output=new, env=env
+    )
+    # gcore.run_command("g.remove", type="raster", name=[hue, intensity, saturation], flags="f", env=env)
+
+
+def classify_colors_svm(new: str, group: str, compactness: int = 2, minsize: int = 10, 
+                        hs_colorspace: bool = False, env=None):
+    """
+    Classifies colors using i.superpixels.slic and i.svm.predict
+    :param new the name of the prediction raster to output
+    :param group the input RGB imagery group to classify, should have an identically named subgroup
+    :param compactness relative convexity of the superpixels segmentation
+    :param minsize minimum pixels in a superpixel
+    :param hs_colorspace whether to use a hue/saturation colorspace instead of RGB, slightly worse but more lighting-invariant
+    :param env GRASS environment with the input and output maps
+    """
+
+    segment = "tmp_segment"
+    rgb_sig = "svm_rgb_sig"
+    hs_sig = "svm_hs_sig"
+    classification = "tmp_classification"
+
+    if hs_colorspace:
+        # Converting to HIS colorspace
+        gcore.run_command(
+            "i.rgb.his",
+            red=f'{group}_r',
+            green=f'{group}_g',
+            blue=f'{group}_b',
+            hue=f"{group}_h",
+            intensity=f"{group}_i",
+            saturation=f"{group}_s",
+            env=env,
+        )
+
+        # Creating HS group without intensity
+        hs_group = group + "_hs"
+        gcore.run_command(
+            "i.group",
+            group=hs_group,
+            subgroup=hs_group,
+            input=[f"{group}_h", f"{group}_s"],
+            env=env,
+        )
+        group = hs_group
+
+    # Segmentation
+    gcore.run_command(
+        "i.superpixels.slic",
+        input=group,
+        output=segment,
+        compactness=compactness,
+        minsize=minsize,
+        env=env,
+    )
+
+    # SVM Classification with the correct sig file
+    gcore.run_command(
+        "i.svm.predict",
+        group=group,
+        subgroup=group,
+        signaturefile=(hs_sig if hs_colorspace else rgb_sig),
+        output=classification,
+        env=env,
+    )
+
+    # Assigning each superpixel to its most represented value
+    gcore.run_command(
+        "r.mode", base=segment, cover=classification, output=new, env=env
+    )
