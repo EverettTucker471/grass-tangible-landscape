@@ -1252,3 +1252,62 @@ def classify_colors_svm(new: str, group: str, compactness: int = 2, minsize: int
     gcore.run_command(
         "r.mode", base=segment, cover=classification, output=new, env=env
     )
+
+
+def locate_pins(depth_scan: str, output: str, filter_file: str, env=None):
+    """
+    Locates pins in a new depth scan based on the filter file
+
+    :param depth_scan is the new depth DEM to classify
+    :param output the result of the classification, vector map with poi centers
+    :param filter_file the file with the trained kernel
+    :param env the GRASS environment to use for running commands
+    """
+
+    # Applying the convolution
+    accept = "tmp_conv_accept"
+    gcore.run_command("r.mfilter",
+                        input=depth_scan,
+                        output=accept,
+                        filter=filter_file,
+                        overwrite=True,
+                        env=env)
+    
+    # Removing the borders which are unaffected by the convolution
+    trimmed = "tmp_accept_trimmed"
+    grast.mapcalc(
+        "{new} = if({scan} == {accept}, null(), {accept})".format(
+            new=trimmed,
+            scan=depth_scan,
+            accept=accept,
+        ),
+        overwrite=True,
+        env=env,
+    )
+
+    # Filter by percentile
+    cutoff = 99.5
+    percentile = float(
+        gcore.parse_command("r.univar", 
+                            flags="ge", 
+                            percentile=cutoff, 
+                            map=trimmed, env=env
+                            )[f"percentile_{str(cutoff).replace('.', '_')}"]
+    )
+
+    # Putting it into a binary raster
+    classification = "tmp_classification"
+    grast.mapcalc(
+        "{new} = if({accept} > {thres}, 1, null())".format(
+            new=classification,
+            accept=trimmed,
+            thres=percentile,
+        ),
+        overwrite=True,
+        env=env,
+    )
+
+    # Generating vector locations for each pin center
+    clumped = "tmp_clumped"
+    gcore.run_command("r.clump", flags="d", input=classification, output=clumped, overwrite=True, env=env)
+    gcore.run_command("r.volume", input=classification, clump=clumped, centroids=output, overwrite=True, env=env)
