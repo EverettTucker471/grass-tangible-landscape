@@ -14,6 +14,8 @@ from math import sqrt
 
 import grass.script as gs
 from grass.tools import Tools, ToolError
+from grass.script import core as gcore
+from grass.script import raster as grast
 
 from tangible_utils import remove_vector
 
