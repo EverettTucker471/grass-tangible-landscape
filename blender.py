@@ -66,6 +66,7 @@ def blender_export_DEM(
         type="Float32",
         create="TFW=YES",
         out=out,
+        overwrite=True,
         quiet=True,
         env=env,
     )
